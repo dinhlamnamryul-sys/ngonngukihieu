@@ -1,118 +1,155 @@
 import streamlit as st
-import os
+import requests
+import base64
 from PIL import Image
-from gtts import gTTS
-import uuid
+from io import BytesIO
+import os
 from unidecode import unidecode
-import speech_recognition as sr
 
-# ==============================
-# CẤU HÌNH
-# ==============================
-DATA_DIR = "data"
+# =====================
+# CẤU HÌNH STREAMLIT
+# =====================
+st.set_page_config(
+    page_title="Ngôn Ngữ Ký Hiệu Từ Ảnh",
+    page_icon="🤟",
+    layout="wide"
+)
 
-HMONG_DICT = {
-    "xin chào": "nyob zoo",
-    "gia đình": "tsev neeg",
-    "động vật": "tsiaj",
-    "trái cây": "txiv hmab txiv ntoo",
-    "a": "a",
-    "đ": "đ",
-    "0": "xoom",
-    "1": "ib",
-    "2": "ob"
-}
+st.title("🤟 CHUYỂN ĐỀ TOÁN → NGÔN NGỮ KÝ HIỆU (VIỆT – H’MÔNG)")
 
-# ==============================
-# AI CORE (TỰ PHÂN BIỆT)
-# ==============================
-def ai_recognize(image):
-    """
-    AI giả lập – thay bằng model thật sau
-    """
-    return "A"   # ví dụ raw label
+# =====================
+# HƯỚNG DẪN API KEY
+# =====================
+with st.expander("🔑 Hướng dẫn lấy Google API Key"):
+    st.markdown("""
+1. Vào: https://aistudio.google.com/app/apikey  
+2. Đăng nhập Gmail  
+3. Nhấn **Create API Key**  
+4. Copy và dán vào bên dưới  
 
-def ai_postprocess(label):
-    """
-    Tự phân biệt chữ / số / từ
-    """
-    for folder in os.listdir(DATA_DIR):
-        if label in os.listdir(os.path.join(DATA_DIR, folder)):
-            return folder, label
-    return "unknown", label
+⚠️ Không chia sẻ API Key
+""")
 
-# ==============================
-# TÌM MEDIA
-# ==============================
-def find_media(label):
-    label_norm = unidecode(label).lower()
+api_key = st.text_input("🔐 Google API Key", type="password")
 
-    for folder in os.listdir(DATA_DIR):
-        folder_path = os.path.join(DATA_DIR, folder)
-        for file in os.listdir(folder_path):
-            name = os.path.splitext(file)[0]
-            if unidecode(name).lower() == label_norm:
-                return os.path.join(folder_path, file)
-    return None
+if not api_key:
+    st.warning("⚠️ Cần nhập API Key để sử dụng AI")
+    st.stop()
 
-# ==============================
-# TTS
-# ==============================
-def speak(text):
-    file = f"tts_{uuid.uuid4().hex}.mp3"
-    gTTS(text=text, lang="vi").save(file)
-    st.audio(file)
-    os.remove(file)
+# =====================
+# HÀM GỌI GEMINI
+# =====================
+def analyze_image_with_gemini(api_key, image, prompt):
+    if image.mode == "RGBA":
+        image = image.convert("RGB")
 
-# ==============================
-# TRANSLATE
-# ==============================
-def translate(text, lang):
-    if lang == "Tiếng Mông":
-        return HMONG_DICT.get(text.lower(), text)
-    return text
+    buf = BytesIO()
+    image.save(buf, format="JPEG")
+    img_b64 = base64.b64encode(buf.getvalue()).decode()
 
-# ==============================
-# STREAMLIT UI
-# ==============================
-st.set_page_config("NNKH AI", layout="wide")
-st.title("🤟 NGÔN NGỮ KÝ HIỆU AI – TỰ PHÂN BIỆT")
+    MODEL = "gemini-2.5-flash"
+    URL = f"https://generativelanguage.googleapis.com/v1/models/{MODEL}:generateContent?key={api_key}"
 
-lang = st.selectbox("Ngôn ngữ xuất", ["Tiếng Việt", "Tiếng Mông"])
+    payload = {
+        "contents": [{
+            "role": "user",
+            "parts": [
+                {"text": prompt},
+                {
+                    "inline_data": {
+                        "mime_type": "image/jpeg",
+                        "data": img_b64
+                    }
+                }
+            ]
+        }]
+    }
 
-st.subheader("📷 Camera")
+    res = requests.post(URL, json=payload)
+    if res.status_code != 200:
+        return f"❌ Lỗi API {res.status_code}: {res.text}"
 
-img_file = st.camera_input("Bật camera")
+    data = res.json()
+    try:
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+    except:
+        return "❌ Không nhận được nội dung từ AI."
 
-if img_file:
-    img = Image.open(img_file)
+# =====================
+# PROMPT NGÔN NGỮ KÝ HIỆU
+# =====================
+PROMPT_NNKH = """
+Bạn là CHUYÊN GIA NGÔN NGỮ KÝ HIỆU VIỆT NAM (VSL) cho người khiếm thính.
 
-    raw_label = ai_recognize(img)
-    category, label = ai_postprocess(raw_label)
+NHIỆM VỤ:
+- Phân tích bài toán trong ảnh.
+- KHÔNG giải theo văn nói.
+- CHUYỂN TOÀN BỘ nội dung sang NGÔN NGỮ KÝ HIỆU.
 
-    label = translate(label, lang)
+=================================
+QUY TẮC BẮT BUỘC
+=================================
+- Không văn dài.
+- Không kể chuyện.
+- Dùng TỪ KHÓA – ĐỘNG TÁC – THỨ TỰ KÝ HIỆU.
+- Mỗi dòng = 1 ý.
+- TỪ KÝ HIỆU viết IN HOA.
+- Công thức toán đặt trong $$ $$.
+- Không sinh ký tự lạ.
 
-    st.success(f"AI nhận diện: {label} ({category})")
+=================================
+1️⃣ PHÂN TÍCH ĐỀ (KÝ HIỆU)
+=================================
+- Dòng 1: Ký hiệu (VIỆT – IN HOA).
+- Dòng 2: Ký hiệu (H’MÔNG – IN HOA).
+- Dòng 3: Thứ tự ký hiệu (→).
 
-    media = find_media(label)
-    if media:
-        st.video(media)
+=================================
+2️⃣ GIẢI BÀI BẰNG KÝ HIỆU
+=================================
+Mỗi bước gồm 3 dòng:
+- VIỆT (KÝ HIỆU).
+- H’MÔNG (KÝ HIỆU).
+- CÔNG THỨC LaTeX sạch.
 
-    speak(label)
+=================================
+3️⃣ DANH SÁCH TỪ CẦN VIDEO KÝ HIỆU
+=================================
+- Mỗi dòng 1 từ IN HOA.
+- Không giải thích thêm.
+"""
 
-# ==============================
-# VOICE SEARCH
-# ==============================
-st.subheader("🎙️ Tìm kiếm bằng giọng nói")
+# =====================
+# NHẬP ẢNH
+# =====================
+st.subheader("📷 Chụp hoặc tải ảnh đề bài")
 
-audio = st.audio_input("Nói")
+col1, col2 = st.columns(2)
 
-if audio:
-    r = sr.Recognizer()
-    with sr.AudioFile(audio) as src:
-        text = r.recognize_google(r.record(src), language="vi-VN")
+with col1:
+    cam = st.camera_input("Chụp ảnh")
 
-    st.info(f"Bạn nói: {text}")
-    media = find_media(text)
-    if media:
-        st.video(media)
+with col2:
+    upload = st.file_uploader("Tải ảnh", type=["jpg", "png", "jpeg"])
+
+image = None
+if cam:
+    image = Image.open(cam)
+elif upload:
+    image = Image.open(upload)
+
+# =====================
+# XỬ LÝ
+# =====================
+if image:
+    st.image(image, caption="Ảnh đề bài", use_column_width=True)
+
+    if st.button("🤖 CHUYỂN SANG NGÔN NGỮ KÝ HIỆU", type="primary"):
+        with st.spinner("⏳ AI đang phân tích & chuyển sang ký hiệu..."):
+            result = analyze_image_with_gemini(api_key, image, PROMPT_NNKH)
+
+        if result.startswith("❌"):
+            st.error(result)
+        else:
+            st.success("✅ Hoàn thành")
+            st.markdown(result)
