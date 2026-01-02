@@ -1,4 +1,7 @@
+opencv-python-headless
+mediapipe
 streamlit
-requests
 Pillow
+gTTS
 unidecode
+pygame
