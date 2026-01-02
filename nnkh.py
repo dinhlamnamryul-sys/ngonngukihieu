@@ -1,124 +1,118 @@
 import streamlit as st
-import cv2
-import mediapipe as mp
-import av
-from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, WebRtcMode
+import os
+from PIL import Image
+from gtts import gTTS
+import uuid
+from unidecode import unidecode
+import speech_recognition as sr
 
-# ================== CẤU HÌNH TRANG ==================
-st.set_page_config(
-    page_title="Hệ thống NNKH AI",
-    page_icon="👐",
-    layout="wide"
-)
+# ==============================
+# CẤU HÌNH
+# ==============================
+DATA_DIR = "data"
 
-# ================== DỮ LIỆU GIẢ LẬP ==================
-mock_library = [
-    {"id": 1, "name": "Xin chào", "category": "Gia đình", "type": "video",
-     "url": "https://www.w3schools.com/html/mov_bbb.mp4"},
-    {"id": 2, "name": "Quả táo", "category": "Trái cây", "type": "image",
-     "url": "https://images.unsplash.com/photo-1560806887-1e4cd0b6bcd6?w=400"},
-    {"id": 3, "name": "Bút chì", "category": "Đồ dùng học tập", "type": "image",
-     "url": "https://images.unsplash.com/photo-1512036667332-2323862660f9?w=400"},
-    {"id": 4, "name": "Con mèo", "category": "Động vật", "type": "video",
-     "url": "https://www.w3schools.com/html/movie.mp4"},
-    {"id": 5, "name": "Ô tô", "category": "Giao thông", "type": "image",
-     "url": "https://images.unsplash.com/photo-1494976388531-d1058494cdd8?w=400"},
-]
+HMONG_DICT = {
+    "xin chào": "nyob zoo",
+    "gia đình": "tsev neeg",
+    "động vật": "tsiaj",
+    "trái cây": "txiv hmab txiv ntoo",
+    "a": "a",
+    "đ": "đ",
+    "0": "xoom",
+    "1": "ib",
+    "2": "ob"
+}
 
-categories = ["Tất cả", "Gia đình", "Trái cây", "Đồ dùng học tập", "Động vật", "Giao thông"]
+# ==============================
+# AI CORE (TỰ PHÂN BIỆT)
+# ==============================
+def ai_recognize(image):
+    """
+    AI giả lập – thay bằng model thật sau
+    """
+    return "A"   # ví dụ raw label
 
-# ================== AI MEDIAPIPE ==================
-class HandDetectorProcessor(VideoTransformerBase):
-    def __init__(self):
-        self.mp_hands = mp.solutions.hands
-        self.hands = self.mp_hands.Hands(
-            static_image_mode=False,
-            max_num_hands=2,
-            min_detection_confidence=0.7,
-            min_tracking_confidence=0.5
-        )
-        self.mp_drawing = mp.solutions.drawing_utils
+def ai_postprocess(label):
+    """
+    Tự phân biệt chữ / số / từ
+    """
+    for folder in os.listdir(DATA_DIR):
+        if label in os.listdir(os.path.join(DATA_DIR, folder)):
+            return folder, label
+    return "unknown", label
 
-    def transform(self, frame):
-        img = frame.to_ndarray(format="bgr24")
-        img = cv2.flip(img, 1)
-        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        results = self.hands.process(img_rgb)
+# ==============================
+# TÌM MEDIA
+# ==============================
+def find_media(label):
+    label_norm = unidecode(label).lower()
 
-        if results.multi_hand_landmarks:
-            for hand_landmarks in results.multi_hand_landmarks:
-                self.mp_drawing.draw_landmarks(
-                    img,
-                    hand_landmarks,
-                    self.mp_hands.HAND_CONNECTIONS,
-                    self.mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=2),
-                    self.mp_drawing.DrawingSpec(color=(0, 0, 255), thickness=2),
-                )
+    for folder in os.listdir(DATA_DIR):
+        folder_path = os.path.join(DATA_DIR, folder)
+        for file in os.listdir(folder_path):
+            name = os.path.splitext(file)[0]
+            if unidecode(name).lower() == label_norm:
+                return os.path.join(folder_path, file)
+    return None
 
-            cv2.putText(
-                img, "DANG NHAN DIEN TAY",
-                (20, 40), cv2.FONT_HERSHEY_SIMPLEX,
-                1, (0, 255, 0), 2
-            )
-        else:
-            cv2.putText(
-                img, "MOI GIO TAY LEN",
-                (20, 40), cv2.FONT_HERSHEY_SIMPLEX,
-                1, (0, 0, 255), 2
-            )
+# ==============================
+# TTS
+# ==============================
+def speak(text):
+    file = f"tts_{uuid.uuid4().hex}.mp3"
+    gTTS(text=text, lang="vi").save(file)
+    st.audio(file)
+    os.remove(file)
 
-        return img
+# ==============================
+# TRANSLATE
+# ==============================
+def translate(text, lang):
+    if lang == "Tiếng Mông":
+        return HMONG_DICT.get(text.lower(), text)
+    return text
 
-# ================== GIAO DIỆN ==================
-st.title("👐 Hệ thống Ngôn ngữ Ký hiệu AI")
+# ==============================
+# STREAMLIT UI
+# ==============================
+st.set_page_config("NNKH AI", layout="wide")
+st.title("🤟 NGÔN NGỮ KÝ HIỆU AI – TỰ PHÂN BIỆT")
 
-tab1, tab2 = st.tabs(["📚 Thư viện học tập", "📷 Nhận diện AI"])
+lang = st.selectbox("Ngôn ngữ xuất", ["Tiếng Việt", "Tiếng Mông"])
 
-# ================== TAB 1 ==================
-with tab1:
-    col1, col2 = st.columns([1, 2])
+st.subheader("📷 Camera")
 
-    with col1:
-        st.subheader("🔍 Tìm kiếm ký hiệu")
-        keyword = st.text_input("Nhập tên ký hiệu:")
-        category = st.selectbox("Danh mục", categories)
-        search_btn = st.button("Tra cứu")
+img_file = st.camera_input("Bật camera")
 
-    with col2:
-        if search_btn or keyword:
-            results = mock_library
+if img_file:
+    img = Image.open(img_file)
 
-            if keyword:
-                results = [i for i in results if keyword.lower() in i["name"].lower()]
+    raw_label = ai_recognize(img)
+    category, label = ai_postprocess(raw_label)
 
-            if category != "Tất cả":
-                results = [i for i in results if i["category"] == category]
+    label = translate(label, lang)
 
-            if results:
-                res = results[0]
-                st.success(f"Kết quả: {res['name']}")
-                if res["type"] == "video":
-                    st.video(res["url"])
-                else:
-                    st.image(res["url"], use_container_width=True)
-            else:
-                st.error("❌ Không tìm thấy ký hiệu.")
-        else:
-            st.info("👉 Nhập từ khóa để tra cứu ký hiệu.")
+    st.success(f"AI nhận diện: {label} ({category})")
 
-# ================== TAB 2 ==================
-with tab2:
-    st.subheader("📷 Nhận diện cử chỉ tay thời gian thực")
-    st.write("Nhấn **Start** và cho phép truy cập Camera.")
+    media = find_media(label)
+    if media:
+        st.video(media)
 
-    webrtc_streamer(
-        key="hand-sign-detect",
-        mode=WebRtcMode.SENDRECV,
-        video_processor_factory=HandDetectorProcessor,
-        media_stream_constraints={"video": True, "audio": False},
-        async_processing=True,
-    )
+    speak(label)
 
-# ================== FOOTER ==================
-st.markdown("---")
-st.caption("© 2026 | Streamlit – MediaPipe – AI")
+# ==============================
+# VOICE SEARCH
+# ==============================
+st.subheader("🎙️ Tìm kiếm bằng giọng nói")
+
+audio = st.audio_input("Nói")
+
+if audio:
+    r = sr.Recognizer()
+    with sr.AudioFile(audio) as src:
+        text = r.recognize_google(r.record(src), language="vi-VN")
+
+    st.info(f"Bạn nói: {text}")
+    media = find_media(text)
+    if media:
+        st.video(media)
