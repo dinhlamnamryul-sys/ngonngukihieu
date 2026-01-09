@@ -1,7 +1,6 @@
-opencv-python-headless
-mediapipe
 streamlit
-Pillow
-gTTS
-unidecode
-pygame
+streamlit-webrtc
+mediapipe
+opencv-python-headless
+av
+numpy
