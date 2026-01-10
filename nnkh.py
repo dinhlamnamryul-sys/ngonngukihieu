@@ -3,146 +3,116 @@ import cv2
 import mediapipe as mp
 import av
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
-import google.generativeai as genai
-from PIL import Image
 
-# ======================
+# =============================
 # CẤU HÌNH TRANG
-# ======================
+# =============================
 st.set_page_config(
-    page_title="Sign.AI – Ngôn ngữ ký hiệu",
+    page_title="Sign.AI – Hỗ trợ người khiếm thính",
     page_icon="✋",
-    layout="centered"
+    layout="wide"
 )
 
-st.title("✋ Sign.AI – AI hỗ trợ người khiếm thính")
-st.caption("Camera + MediaPipe + Gemini Vision AI")
+# =============================
+# CSS – GIAO DIỆN THÂN THIỆN
+# =============================
+st.markdown("""
+<style>
+body {
+    background-color: #f8fafc;
+}
+h1, h2, h3 {
+    color: #0f172a;
+}
+.big-text {
+    font-size: 22px;
+    font-weight: bold;
+}
+.card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 1rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+</style>
+""", unsafe_allow_html=True)
 
-# ======================
-# API KEY
-# ======================
-api_key = st.secrets.get("GOOGLE_API_KEY", "")
-
-if not api_key:
-    st.warning("⚠️ Chưa có Google API Key")
-    api_key = st.text_input("Nhập Google API Key:", type="password")
-
-# ======================
+# =============================
 # MEDIAPIPE
-# ======================
+# =============================
 mp_hands = mp.solutions.hands
 mp_draw = mp.solutions.drawing_utils
 
-# ======================
-# AI PHÂN TÍCH ẢNH
-# ======================
-def analyze_real_image(api_key, image):
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-1.5-flash")
-
-    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    pil_image = Image.fromarray(image_rgb)
-
-    prompt = """
-    Đây là hình ảnh bàn tay người.
-    Hãy phân tích:
-    - Ngón tay nào đang duỗi, ngón nào đang gập
-    - Tư thế bàn tay
-    - Có thể tương ứng ký hiệu ngôn ngữ tay nào (A, B, C, D, V, I… nếu có)
-    Trả lời ngắn gọn, rõ ràng, bằng tiếng Việt.
-    """
-
-    response = model.generate_content([prompt, pil_image])
-    return response.text
-
-
-# ======================
+# =============================
 # VIDEO PROCESSOR
-# ======================
+# =============================
 class HandProcessor(VideoProcessorBase):
     def __init__(self):
         self.hands = mp_hands.Hands(
             max_num_hands=1,
             model_complexity=0,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
+            min_detection_confidence=0.6,
+            min_tracking_confidence=0.6
         )
 
     def recv(self, frame):
         img = frame.to_ndarray(format="bgr24")
         img = cv2.flip(img, 1)
 
-        # Lưu frame cho AI
-        st.session_state.last_frame = img.copy()
-
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         result = self.hands.process(rgb)
 
         if result.multi_hand_landmarks:
-            for hand_landmarks in result.multi_hand_landmarks:
+            for hand in result.multi_hand_landmarks:
                 mp_draw.draw_landmarks(
                     img,
-                    hand_landmarks,
+                    hand,
                     mp_hands.HAND_CONNECTIONS,
-                    mp_draw.DrawingSpec(color=(0, 255, 0), thickness=2),
+                    mp_draw.DrawingSpec(color=(0, 255, 0), thickness=3),
                     mp_draw.DrawingSpec(color=(255, 0, 0), thickness=2)
                 )
 
         return av.VideoFrame.from_ndarray(img, format="bgr24")
 
-
-# ======================
-# GIAO DIỆN CAMERA
-# ======================
-st.info("📷 Cho phép trình duyệt sử dụng camera")
-
-webrtc_streamer(
-    key="sign-ai",
-    mode=WebRtcMode.SENDRECV,
-    video_processor_factory=HandProcessor,
-    media_stream_constraints={"video": True, "audio": False},
-    async_processing=True,
-    rtc_configuration={
-        "iceServers": [
-            {"urls": ["stun:stun.l.google.com:19302"]},
-            {"urls": ["stun:stun1.l.google.com:19302"]},
-            {"urls": ["stun:stun2.l.google.com:19302"]},
-        ]
-    }
+# =============================
+# SIDEBAR – MENU
+# =============================
+st.sidebar.title("✋ Sign.AI")
+menu = st.sidebar.radio(
+    "Chức năng",
+    [
+        "🏠 Trang chủ",
+        "✋ Phân tích khớp tay",
+        "🤖 AI hiểu cử chỉ (ý tưởng)",
+        "📚 Thư viện ký hiệu",
+        "🎓 Chế độ học tập"
+    ]
 )
 
-# ======================
-# NÚT AI PHÂN TÍCH
-# ======================
-st.divider()
+# =============================
+# TRANG CHỦ
+# =============================
+if menu == "🏠 Trang chủ":
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.title("Sign.AI – Công nghệ vì người khiếm thính")
+    st.markdown("""
+    <p class="big-text">
+    Ứng dụng hỗ trợ người khiếm thính:
+    </p>
+    <ul class="big-text">
+        <li>✋ Nhận diện tay từ camera</li>
+        <li>🤖 AI hiểu cử chỉ</li>
+        <li>📚 Học ngôn ngữ ký hiệu</li>
+        <li>🎓 Luyện tập giao tiếp</li>
+    </ul>
+    """, unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-if st.button("🤖 AI phân tích ký hiệu tay"):
-    if not api_key:
-        st.error("❌ Chưa có Google API Key")
-    elif "last_frame" not in st.session_state:
-        st.error("❌ Chưa có hình ảnh từ camera")
-    else:
-        with st.spinner("AI đang phân tích cử chỉ tay..."):
-            result = analyze_real_image(
-                api_key,
-                st.session_state.last_frame
-            )
-        st.success("✅ Kết quả AI:")
-        st.write(result)
+# =============================
+# PHÂN TÍCH KHỚP TAY
+# =============================
+elif menu == "✋ Phân tích khớp tay":
+    st.title("✋ Phân tích khớp tay từ Camera")
+    st.info("👉 Giữ tay trước camera – hệ thống sẽ hiển thị 21 khớp tay")
 
-# ======================
-# THÔNG TIN
-# ======================
-st.markdown("""
-### ✨ Chức năng
-- ✅ Camera realtime
-- ✅ Bắt **21 khớp tay**
-- ✅ AI hiểu **cử chỉ bàn tay**
-- ✅ Hỗ trợ **người khiếm thính giao tiếp**
-
-### 🚀 Có thể mở rộng
-- Nhận diện chữ cái A–Z
-- Ghép từ → câu
-- Text → Speech cho người nghe
-- Chế độ học tập cho HS khiếm thính
-""")
+    web
