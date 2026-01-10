@@ -14,6 +14,7 @@ st.set_page_config(
 )
 
 st.title("✋ Sign.AI – Nhận diện tay cho người khiếm thính")
+st.caption("Ứng dụng demo: Bật camera – Bắt khớp tay realtime")
 
 # ======================
 # KHỞI TẠO MEDIAPIPE
@@ -30,7 +31,7 @@ class HandProcessor(VideoProcessorBase):
         self.hands = mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=1,
-            model_complexity=0,
+            model_complexity=0,  # nhẹ – chạy mượt trên web
             min_detection_confidence=0.5,
             min_tracking_confidence=0.5
         )
@@ -47,7 +48,9 @@ class HandProcessor(VideoProcessorBase):
                 mp_draw.draw_landmarks(
                     img,
                     hand_landmarks,
-                    mp_hands.HAND_CONNECTIONS
+                    mp_hands.HAND_CONNECTIONS,
+                    mp_draw.DrawingSpec(color=(0, 255, 0), thickness=2, circle_radius=3),
+                    mp_draw.DrawingSpec(color=(255, 0, 0), thickness=2)
                 )
 
         return av.VideoFrame.from_ndarray(img, format="bgr24")
@@ -56,23 +59,35 @@ class HandProcessor(VideoProcessorBase):
 # ======================
 # GIAO DIỆN
 # ======================
-st.info("📷 Cho phép trình duyệt dùng camera để bắt khớp tay")
+st.info("📷 Vui lòng cho phép trình duyệt sử dụng camera")
 
 webrtc_streamer(
-    key="hand-sign",
+    key="sign-ai-camera",
     mode=WebRtcMode.SENDRECV,
     video_processor_factory=HandProcessor,
     media_stream_constraints={"video": True, "audio": False},
-    async_processing=True
+    async_processing=True,
+
+    # 🔥 FIX LỖI CAMERA – STUN SERVER
+    rtc_configuration={
+        "iceServers": [
+            {"urls": ["stun:stun.l.google.com:19302"]},
+            {"urls": ["stun:stun1.l.google.com:19302"]},
+            {"urls": ["stun:stun2.l.google.com:19302"]},
+        ]
+    }
 )
 
 st.markdown("""
 ### ✨ Chức năng hiện tại
-- Nhận diện **bàn tay**
-- Hiển thị **21 khớp tay**
-- Theo dõi **chuyển động realtime**
+- ✅ Bật camera Web
+- ✅ Nhận diện **21 khớp tay**
+- ✅ Theo dõi tay realtime
+- ✅ Hoạt động tốt trên **Streamlit Cloud**
 
-👉 Có thể mở rộng sang:
-- Nhận diện **chữ cái A–Z**
-- Dịch **ký hiệu → chữ → giọng nói**
+### 🚀 Có thể mở rộng
+- ✋ Nhận diện chữ cái A–Z
+- 🔤 Ghép từ – câu
+- 🔊 Phát giọng nói giúp người khiếm thính giao tiếp
+- 📚 Thư viện học ngôn ngữ ký hiệu
 """)
