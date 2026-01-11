@@ -6,3 +6,9 @@ av
 numpy
 google-generativeai
 Pillow
+streamlit
+opencv-python-headless
+mediapipe
+streamlit-webrtc
+av
+numpy
