@@ -1,153 +1,87 @@
 import streamlit as st
-import cv2
-import mediapipe as mp
-import av
-from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
+import google.generativeai as genai
 
-# =========================
-# CẤU HÌNH TRANG
-# =========================
+# --- CẤU HÌNH TRANG WEB ---
 st.set_page_config(
-    page_title="Sign.AI – Hỗ trợ người khiếm thính",
-    page_icon="✋",
-    layout="wide"
+    page_title="AI Chatbot",
+    page_icon="🤖",
+    layout="centered"
 )
 
-# =========================
-# CSS – GIAO DIỆN DỄ NHÌN
-# =========================
-st.markdown("""
-<style>
-body {
-    background-color: #f8fafc;
-}
-h1, h2 {
-    color: #0f172a;
-}
-.big {
-    font-size: 22px;
-    font-weight: bold;
-}
-.card {
-    background: white;
-    padding: 1.5rem;
-    border-radius: 1rem;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
-}
-</style>
-""", unsafe_allow_html=True)
+st.title("🤖 Trợ lý AI Thông Minh")
 
-# =========================
-# MEDIAPIPE
-# =========================
-mp_hands = mp.solutions.hands
-mp_draw = mp.solutions.drawing_utils
+# --- CẤU HÌNH API KEY (QUAN TRỌNG) ---
+# Lấy API Key từ Secrets của Streamlit để bảo mật
+try:
+    api_key = st.secrets["GOOGLE_API_KEY"]
+    genai.configure(api_key=api_key)
+except KeyError:
+    # Hướng dẫn nếu chưa nhập Key
+    st.error("⚠️ Lỗi: Chưa tìm thấy API Key.")
+    st.info("Vui lòng vào cài đặt 'Secrets' trên Streamlit Cloud và thêm dòng: GOOGLE_API_KEY = 'mã_key_của_bạn'")
+    st.stop()
 
-# =========================
-# VIDEO PROCESSOR
-# =========================
-class HandProcessor(VideoProcessorBase):
-    def __init__(self):
-        self.hands = mp_hands.Hands(
-            static_image_mode=False,
-            max_num_hands=1,
-            model_complexity=0,
-            min_detection_confidence=0.6,
-            min_tracking_confidence=0.6
-        )
+# --- CÀI ĐẶT THANH BÊN (SIDEBAR) ---
+with st.sidebar:
+    st.header("Cài đặt")
+    
+    # Nút xóa lịch sử chat
+    if st.button("🗑️ Xóa lịch sử chat"):
+        st.session_state.messages = []
+        st.rerun()
+    
+    st.divider()
+    st.markdown("Created with Gemini & Streamlit")
 
-    def recv(self, frame):
-        img = frame.to_ndarray(format="bgr24")
-        img = cv2.flip(img, 1)
+# --- KHỞI TẠO MODEL ---
+# Bạn có thể thay đổi system_instruction để AI đóng vai cụ thể (VD: Giáo viên toán)
+system_instruction = "Bạn là một trợ lý AI hữu ích, thân thiện và trả lời ngắn gọn, chính xác."
 
-        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        result = self.hands.process(rgb)
+model = genai.GenerativeModel(
+    model_name='gemini-1.5-flash', # Model nhanh và nhẹ
+    system_instruction=system_instruction
+)
 
-        if result.multi_hand_landmarks:
-            for hand_landmarks in result.multi_hand_landmarks:
-                mp_draw.draw_landmarks(
-                    img,
-                    hand_landmarks,
-                    mp_hands.HAND_CONNECTIONS,
-                    mp_draw.DrawingSpec(color=(0, 255, 0), thickness=3),
-                    mp_draw.DrawingSpec(color=(255, 0, 0), thickness=2),
+# --- QUẢN LÝ LỊCH SỬ CHAT ---
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# Hiển thị các tin nhắn cũ
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# --- XỬ LÝ NHẬP LIỆU & TRẢ LỜI ---
+if prompt := st.chat_input("Nhập câu hỏi của bạn..."):
+    # 1. Hiển thị câu hỏi của người dùng
+    st.chat_message("user").markdown(prompt)
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    # 2. AI xử lý và trả lời
+    with st.chat_message("assistant"):
+        empty_slot = st.empty() # Tạo khung trống để hiệu ứng chữ chạy (nếu muốn)
+        with st.spinner("Đang suy nghĩ..."):
+            try:
+                # Gửi toàn bộ lịch sử chat để AI nhớ ngữ cảnh
+                chat_session = model.start_chat(
+                    history=[
+                        {"role": m["role"], "parts": [m["content"]]}
+                        for m in st.session_state.messages 
+                        if m["role"] in ["user", "model"] # Lọc đúng role cho Gemini
+                    ]
                 )
-
-        return av.VideoFrame.from_ndarray(img, format="bgr24")
-
-# =========================
-# SIDEBAR – MENU
-# =========================
-st.sidebar.title("✋ Sign.AI")
-menu = st.sidebar.radio(
-    "Chức năng",
-    [
-        "🏠 Trang chủ",
-        "✋ Phân tích khớp tay",
-        "📚 Thư viện ký hiệu (ý tưởng)",
-        "🎓 Học tập (ý tưởng)"
-    ]
-)
-
-# =========================
-# TRANG CHỦ
-# =========================
-if menu == "🏠 Trang chủ":
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.title("Sign.AI – Công nghệ vì người khiếm thính")
-    st.markdown("""
-    <p class="big">
-    Ứng dụng hỗ trợ người khiếm thính giao tiếp và học tập:
-    </p>
-    <ul class="big">
-        <li>✋ Nhận diện khớp tay từ camera</li>
-        <li>🤖 Chuẩn bị cho AI hiểu ký hiệu</li>
-        <li>📚 Học ngôn ngữ ký hiệu</li>
-        <li>🎓 Luyện tập cho học sinh</li>
-    </ul>
-    """, unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# =========================
-# PHÂN TÍCH KHỚP TAY
-# =========================
-elif menu == "✋ Phân tích khớp tay":
-    st.title("✋ Phân tích khớp tay từ Camera")
-    st.info("👉 Giữ tay trước camera – hệ thống sẽ hiển thị 21 khớp tay")
-
-    webrtc_streamer(
-        key="hand-detect",
-        mode=WebRtcMode.SENDRECV,
-        video_processor_factory=HandProcessor,
-        media_stream_constraints={"video": True, "audio": False},
-        async_processing=True,
-        rtc_configuration={
-            "iceServers": [
-                {"urls": ["stun:stun.l.google.com:19302"]}
-            ]
-        }
-    )
-
-# =========================
-# THƯ VIỆN (Ý TƯỞNG)
-# =========================
-elif menu == "📚 Thư viện ký hiệu (ý tưởng)":
-    st.title("📚 Thư viện ngôn ngữ ký hiệu")
-    st.markdown("""
-    **Ý tưởng phát triển:**
-    - Video ký hiệu mẫu A–Z  
-    - Ký hiệu giao tiếp cơ bản  
-    - Phù hợp học sinh khiếm thính  
-    """)
-
-# =========================
-# HỌC TẬP (Ý TƯỞNG)
-# =========================
-elif menu == "🎓 Học tập (ý tưởng)":
-    st.title("🎓 Chế độ học tập")
-    st.markdown("""
-    **Ý tưởng:**
-    - Xem ký hiệu mẫu  
-    - Người học làm theo  
-    - Camera so sánh và phản hồi  
-    """)
+                
+                # Gửi tin nhắn mới nhất (lưu ý: ở đây dùng send_message vì đã start_chat)
+                # Tuy nhiên để đơn giản và ít lỗi context, ta dùng generate_content cho prompt hiện tại
+                # kết hợp context tự quản lý hoặc dùng chat object. 
+                # Cách ổn định nhất cho app đơn giản:
+                response = model.generate_content(prompt) 
+                
+                # Hiển thị kết quả
+                st.markdown(response.text)
+                
+                # Lưu vào lịch sử
+                st.session_state.messages.append({"role": "model", "content": response.text})
+                
+            except Exception as e:
+                st.error(f"Đã xảy ra lỗi: {e}")
